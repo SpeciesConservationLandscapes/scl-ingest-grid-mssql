@@ -1,6 +1,7 @@
 import argparse
 import os
 import pyodbc
+
 # import subprocess
 from osgeo import ogr
 from pathlib import Path
@@ -61,7 +62,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--labelfield",
-    help="Name of field containing string to be written to CI_GridCellCode. If unspecified, `id` will be used."
+    help="Name of field containing string to be written to CI_GridCellCode. If unspecified, `id` will be used.",
 )
 options = vars(parser.parse_args())
 shapefile = options.get("shapefile")
@@ -74,29 +75,34 @@ labelfield = options.get("labelfield", "id") or "id"
 ds = driver.Open(shapefile)
 layer = ds.GetLayer()
 
+feature_count = layer.GetFeatureCount()
+if feature_count <= 0:
+    raise IngestionException("shapefile has no features")
+
 grid_id = None
 grid_insert_sql = f"""
     INSERT INTO CI_Grid (
-        CI_GridName, 
-        CI_OrganizationID_Owner, 
-        CI_SecuritySettingID_Row, 
-        Archive, 
-        CRDate, 
-        LMDate, 
-        UserID_CR, 
-        UserID_LM, 
-        CRIPAddress, 
-        LMIPAddress, 
-        CI_GridExtCode, 
+        CI_GridName,
+        CI_OrganizationID_Owner,
+        CI_SecuritySettingID_Row,
+        Archive,
+        CRDate,
+        LMDate,
+        UserID_CR,
+        UserID_LM,
+        CRIPAddress,
+        LMIPAddress,
+        CI_GridExtCode,
         IsPublic
     )
     VALUES ('{gridname}', 1, 1, 0, GETDATE(), GETDATE(), -1, -1, '', '', '', 0)
 """
 with cnxn:
-    # have to commit this before running ogr2ogr and GridCell INSERTs
+    # have to commit this before running ogr2ogr or GridCell INSERTs
     cursor.execute(grid_insert_sql)
     grid_id = cursor.execute("SELECT MAX(CI_GridID) FROM CI_Grid").fetchval()
 
+grid_id = 16
 if grid_id:
     print(f"new grid: {grid_id}")
 
@@ -121,8 +127,10 @@ if grid_id:
     # except subprocess.CalledProcessError as err:
     #     raise IngestionException(err.stdout)
 
-    table_create_sql = f"CREATE TABLE {gridname} " \
-                       f"(CI_GridID int NOT NULL, Geom geometry NOT NULL, CI_GridCellCode nvarchar(255) NULL)"
+    table_create_sql = (
+        f"CREATE TABLE {gridname} "
+        f"(CI_GridID int NOT NULL, Geom geometry NOT NULL, CI_GridCellCode nvarchar(255) NULL)"
+    )
     cursor.execute(table_create_sql)
     cursor.commit()
 
@@ -132,7 +140,9 @@ if grid_id:
     for feature in layer:
         label = feature.GetField(labelfield)
         geom = feature.GetGeometryRef().ExportToWkt()
-        insert_strs.append(f"        ({grid_id}, geometry::STGeomFromText('{geom}', 0), '{label}')")
+        insert_strs.append(
+            f"        ({grid_id}, geometry::STGeomFromText('{geom}', 0), '{label}')"
+        )
 
         if n == (BATCH * batchcount) - 1:
             print(f"batch {batchcount}")
@@ -142,34 +152,14 @@ if grid_id:
         n += 1
     insert_temp_cells(insert_strs)  # remainder
 
-    gridcell_insert_sql = f"""
-        SELECT {labelfield},  -- from tiger_region_grid2
-        1, 1, 0, GETDATE(), GETDATE(), -1, -1, '', '', '',  -- defaults
-        Geom,  -- from tiger_region_grid2
-        {grid_id}
-        INTO CI_GridCell (
-            CI_GridCellCode,
-            CI_OrganizationID_Owner,
-            CI_SecuritySettingID_Row,
-            Archive,
-            CRDate,
-            LMDate,
-            UserID_CR,
-            UserID_LM,
-            CRIPAddress,
-            LMIPAddress,
-            CI_GridCellExtCode,
-            Geom,
-            CI_GridID
-        )
-        FROM {gridname}
-    """
-    print(gridcell_insert_sql)
-
-    # with cnxn:
-    #     cursor.execute(gridcell_insert_sql)
-    #     cursor.execute(f"DROP TABLE {gridname}")
-
-    # if something goes wrong:
-    # DELETE FROM CI_GridCell WHERE CI_GridID = grid_id
-    # DELETE FROM CI_Grid WHERE CI_GridID = grid_id
+    with cnxn:
+        try:
+            sp_sql = f"CI_GridCellImport '{gridname}'"
+            cells_inserted = cursor.execute(sp_sql).fetchval()
+            if cells_inserted != feature_count:
+                raise IngestionException(
+                    "number of cells inserted into CI_GridCell not equal to shapefile feature count"
+                )
+            cursor.execute(f"DROP TABLE {gridname}")
+        except pyodbc.ProgrammingError as e:
+            raise IngestionException("CI_GridCellImport call failed")
