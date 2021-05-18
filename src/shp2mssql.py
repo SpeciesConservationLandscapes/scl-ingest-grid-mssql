@@ -79,6 +79,7 @@ feature_count = layer.GetFeatureCount()
 if feature_count <= 0:
     raise IngestionException("shapefile has no features")
 
+existing_grid_id = cursor.execute("SELECT MAX(CI_GridID) FROM CI_Grid").fetchval()
 grid_id = None
 grid_insert_sql = f"""
     INSERT INTO CI_Grid (
@@ -102,8 +103,7 @@ with cnxn:
     cursor.execute(grid_insert_sql)
     grid_id = cursor.execute("SELECT MAX(CI_GridID) FROM CI_Grid").fetchval()
 
-grid_id = 16
-if grid_id:
+if grid_id and grid_id != existing_grid_id:
     print(f"new grid: {grid_id}")
 
     # try:
