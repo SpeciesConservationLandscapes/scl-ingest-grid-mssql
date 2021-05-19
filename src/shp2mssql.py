@@ -154,8 +154,9 @@ if grid_id and grid_id != existing_grid_id:
 
     with cnxn:
         try:
-            sp_sql = f"CI_GridCellImport '{gridname}'"
+            sp_sql = f"SET NOCOUNT ON; EXEC CI_GridCellImport @SourceTable = '{gridname}'"
             cells_inserted = cursor.execute(sp_sql).fetchval()
+            print(f"{cells_inserted} cells inserted")
             if cells_inserted != feature_count:
                 raise IngestionException(
                     "number of cells inserted into CI_GridCell not equal to shapefile feature count"
