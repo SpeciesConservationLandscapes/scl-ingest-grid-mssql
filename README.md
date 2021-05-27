@@ -20,10 +20,10 @@ OBSDB_PASS=
 
 - Build:  
   Note the required `--build-arg` docker argument.  
-  `docker build --build-arg OBSDB_HOST=<OBSDB_HOST> -t scl3/scl_inget_grid_mssql .`
+  `docker build --build-arg OBSDB_HOST=<OBSDB_HOST> -t scl3/shp2mssql .`
 - Run:
-    - shell: `docker run -it --env-file ./.env -v $PWD/src:/app scl3/scl_inget_grid_mssql bash`
-    - direct invocation: `docker run -it --env-file ./.env -v $PWD/src:/app scl3/scl_inget_grid_mssql python shp2mssql.py tiger_region_grid_1.shp --gridname tiger_zone_grid`  
+    - shell: `docker run -it --env-file ./.env -v $PWD/src:/app scl3/shp2mssql bash`
+    - direct invocation: `docker run -it --env-file ./.env -v $PWD/src:/app scl3/shp2mssql python shp2mssql.py tiger_region_grid_1.shp --gridname tiger_zone_grid`  
 
 ```
 usage: shp2mssql.py [-h] [-g GRIDNAME] shapefile
